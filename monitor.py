@@ -69,12 +69,13 @@ def fetch_lakers_news():
     return new_articles, seen_links
 
 def generate_structured_script(articles):
-    """強制 Gemini 輸出純 JSON，徹底杜絕多餘標題被唸出來"""
+    """請 Gemini 輸出 JSON 格式並安全解析，不受 API 版本限制"""
     batch = articles[:3]
     raw_text = "\n\n".join([f"標題: {a['title']}\n摘要: {a['desc']}\n連結: {a['link']}" for a in batch])
 
     prompt = f"""
-    你是一位專業的 NBA 洛杉磯湖人隊隨隊記者。請根據以下新聞回傳一個 JSON 物件，包含兩個欄位：
+    你是一位專業的 NBA 洛杉磯湖人隊隨隊記者。請根據以下新聞回傳一個標準 JSON 物件，不要加任何其他說明文字。
+    JSON 必須包含兩個欄位：
     1. "discord_text": 發送到 Discord 的繁體中文快報，每則用「🏀 **中文吸睛標題**」條列重點並附上原文連結（總字數 250 字內）。
     2. "voice_script": 給體育男主播朗讀的 20～25 秒口播稿。必須用自然流暢、充滿朝氣的台灣口語新聞腔調，開頭直接說「各位湖人球迷大家好，帶您掌握最新湖人快報！」。絕對不可包含任何星號、井字號、網址、括號或標題說明，純粹是主播要唸出來的口語文字（約 90～115 個中文字）。
 
@@ -85,9 +86,11 @@ def generate_structured_script(articles):
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
-    data = json.loads(response.text)
+    
+    # 自動剝除可能出現的 ```json ... ``` 外框並解析
+    clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
+    data = json.loads(clean_text)
     return data["discord_text"], data["voice_script"]
 
 async def create_voiceover_and_srt(text: str, output_mp3: str, output_srt: str):
