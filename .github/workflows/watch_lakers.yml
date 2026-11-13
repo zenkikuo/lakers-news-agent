@@ -23,9 +23,9 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-noto-cjk
 
       - name: Install Python dependencies
-        run: pip install google-genai requests edge-tts pillow
+        run: pip install google-genai requests edge-tts pillow beautifulsoup4
 
-      - name: Run Lakers video news monitor
+      - name: Run Lakers dynamic video monitor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
