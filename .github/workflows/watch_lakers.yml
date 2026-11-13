@@ -5,6 +5,11 @@ on:
     - cron: '0 * * * *'  # 每小時整點自動執行一次
   workflow_dispatch:     # 允許手動點擊立即測試
 
+permissions:
+  contents: write
+  pull-requests: write
+  models: read           # 授權免費呼叫 GitHub Models (GPT-4o)
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -23,17 +28,40 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-noto-cjk
 
       - name: Install Python dependencies
-        run: pip install google-genai requests edge-tts pillow beautifulsoup4
+        run: pip install google-genai openai requests edge-tts pillow beautifulsoup4
 
       - name: Run Lakers dynamic video monitor
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python monitor.py
+        run: |
+          set -o pipefail
+          python monitor.py 2>&1 | tee error.log
 
       - name: Commit updated seen_news.json
+        if: success()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add seen_news.json
           git diff --quiet && git diff --staged --quiet || (git commit -m "Update seen Lakers news" && git push)
+
+      # --- 失敗時自動喚醒 GitHub Models (GPT-4o) Debug Agent ---
+      - name: Run Auto-Debug Agent on Failure
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python debug_agent.py
+
+      - name: Create Pull Request with AI Fix
+        if: failure()
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "fix: auto-patch monitor.py by GitHub Models GPT-4o"
+          title: "🤖 [Auto-Debug] GPT-4o 修復 monitor.py 執行錯誤"
+          body-path: pr_body.md
+          branch: ai-hotfix/monitor-patch
+          delete-branch: true
