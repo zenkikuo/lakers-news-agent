@@ -2,9 +2,50 @@ import os
 import re
 import json
 import requests
+from google import genai
 
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+def ask_debug_llm(prompt: str) -> tuple[str, dict]:
+    """第一順位嘗試 GitHub Models (GPT-4o)，若端點未開通或無回應則自動無縫備援至 Gemini 2.5 Pro"""
+    url = "https://models.github.ai/inference/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "openai/gpt-4o",
+        "messages": [
+            {"role": "system", "content": "你是一位精準的 Python 除錯專家，只輸出合法的 JSON 格式。"},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1
+    }
+
+    try:
+        res = requests.post(url, headers=headers, json=payload, timeout=30)
+        print(f"GitHub Models HTTP 狀態碼: {res.status_code}", flush=True)
+        if res.status_code == 200 and res.text.strip():
+            data = res.json()
+            raw_content = data["choices"][0]["message"]["content"]
+            clean_text = re.sub(r"^```json\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
+            return "GitHub Models (GPT-4o)", json.loads(clean_text)
+        else:
+            print(f"GitHub Models 未回傳有效 JSON（回應內容：{res.text[:200]}），自動切換至備援模型...", flush=True)
+    except Exception as e:
+        print(f"GitHub Models 連線異常 ({e})，自動切換至備援模型...", flush=True)
+
+    # 第二順位備援：呼叫推理能力最強的 Gemini 2.5 Pro 進行深度除錯
+    print("啟動備援引擎 Gemini 2.5 Pro 進行深度診斷...", flush=True)
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=prompt,
+    )
+    clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
+    return "Gemini 2.5 Pro (備援除錯引擎)", json.loads(clean_text)
 
 def run_auto_debug():
     if not os.path.exists("error.log"):
@@ -30,31 +71,7 @@ def run_auto_debug():
     {source_code}
     """
 
-    print("GitHub Models (openai/gpt-4o) Debug Agent 正在交叉分析錯誤並生成修復程式碼...", flush=True)
-    
-    url = "https://models.github.ai/inference/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": "openai/gpt-4o",
-        "messages": [
-            {"role": "system", "content": "你是一位精準的 Python 除錯專家，只輸出合法的 JSON 格式。"},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.1
-    }
-
-    res = requests.post(url, headers=headers, json=payload, timeout=45)
-    res.raise_for_status()
-    data = res.json()
-
-    # 相容標準 OpenAI JSON 結構或直接回傳文字的格式
-    raw_content = data["choices"][0]["message"]["content"] if isinstance(data, dict) and "choices" in data else str(data)
-    clean_text = re.sub(r"^```json\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
-    result = json.loads(clean_text)
-
+    engine_name, result = ask_debug_llm(prompt)
     diagnosis = result["diagnosis"]
     fixed_code = result["fixed_code"]
 
@@ -64,7 +81,7 @@ def run_auto_debug():
 
     with open("pr_body.md", "w", encoding="utf-8") as f:
         f.write(
-            f"### 🤖 GitHub Models (GPT-4o) 自動診斷報告\n\n"
+            f"### 🤖 {engine_name} 自動診斷報告\n\n"
             f"{diagnosis}\n\n---\n"
             f"*請檢視 Files changed 確認無誤後，點擊下方 **Merge pull request** 即可套用修復。*"
         )
@@ -73,11 +90,11 @@ def run_auto_debug():
     repo_url = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/pulls"
     discord_msg = (
         f"🛠️ **自動除錯警報！監控腳本執行失敗**\n\n"
-        f"**🔍 GPT-4o (GitHub Models) 交叉診斷：**\n{diagnosis}\n\n"
+        f"**🔍 {engine_name} 診斷結果：**\n{diagnosis}\n\n"
         f"👉 **請前往 GitHub 審核並合併修復 PR：**\n{repo_url}"
     )
     requests.post(DISCORD_WEBHOOK, json={"content": discord_msg}, timeout=10)
-    print("已完成程式碼修復並發送 Discord 審核通知！", flush=True)
+    print(f"已透過 {engine_name} 完成程式碼修復並發送 Discord 審核通知！", flush=True)
 
 if __name__ == "__main__":
     run_auto_debug()
