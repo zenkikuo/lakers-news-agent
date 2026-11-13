@@ -1,14 +1,10 @@
 import os
+import re
 import json
 import requests
-from openai import OpenAI
 
-# 使用 GitHub Models 官方新版推論端點 + 內建 GITHUB_TOKEN (0 元免儲值呼叫 GPT-4o)
-client = OpenAI(
-    base_url="https://models.github.ai/inference",
-    api_key=os.environ["GITHUB_TOKEN"],
-)
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
+GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 
 def run_auto_debug():
     if not os.path.exists("error.log"):
@@ -23,7 +19,7 @@ def run_auto_debug():
 
     prompt = f"""
     你是一位資深的 Python 自動化與 CI/CD 除錯工程師。我們的雲端排程程式 `monitor.py` 在執行時發生錯誤中斷。
-    請分析以下錯誤日誌與原始碼，回傳一個標準 JSON 物件，包含兩個欄位：
+    請分析以下錯誤日誌與原始碼，回傳一個標準 JSON 物件（不要加任何其他說明文字），包含兩個欄位：
     1. "diagnosis": 用繁體中文簡潔說明「錯誤原因」與「修復方式」（150 字以內，準備發送到 Discord 通知開發者）。
     2. "fixed_code": 修復完成後、可直接覆蓋存檔的「完整 `monitor.py` 程式碼」（務必保留所有原有功能與正確縮排，不可省略任何段落）。
 
@@ -35,17 +31,30 @@ def run_auto_debug():
     """
 
     print("GitHub Models (openai/gpt-4o) Debug Agent 正在交叉分析錯誤並生成修復程式碼...", flush=True)
-    response = client.chat.completions.create(
-        model="openai/gpt-4o",
-        response_format={"type": "json_object"},
-        messages=[
+    
+    url = "https://models.github.ai/inference/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "openai/gpt-4o",
+        "messages": [
             {"role": "system", "content": "你是一位精準的 Python 除錯專家，只輸出合法的 JSON 格式。"},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.1
-    )
+        "temperature": 0.1
+    }
 
-    result = json.loads(response.choices[0].message.content)
+    res = requests.post(url, headers=headers, json=payload, timeout=45)
+    res.raise_for_status()
+    data = res.json()
+
+    # 相容標準 OpenAI JSON 結構或直接回傳文字的格式
+    raw_content = data["choices"][0]["message"]["content"] if isinstance(data, dict) and "choices" in data else str(data)
+    clean_text = re.sub(r"^```json\s*|\s*```$", "", raw_content.strip(), flags=re.MULTILINE)
+    result = json.loads(clean_text)
+
     diagnosis = result["diagnosis"]
     fixed_code = result["fixed_code"]
 
