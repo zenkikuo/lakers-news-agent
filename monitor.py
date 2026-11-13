@@ -14,7 +14,8 @@ from google import genai
 # 1. 初始化環境變數
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
-RSS_URL = "https://sports.yahoo.com/nba/rss/"
+# RSS_URL = "https://sports.yahoo.com/nba/rss/"
+RSS_URL = "https://news.google.com/rss/search?q=Los+Angeles+Lakers+when:1d&hl=en-US&gl=US&ceid=US:en"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
@@ -52,18 +53,21 @@ def fetch_lakers_news():
     seen_links = load_seen()
     new_articles = []
 
-    for item in root.findall("./channel/item"):
+    items = root.findall("./channel/item")
+    print(f"Google News 共抓到 {len(items)} 則最新湖人隊新聞！")
+
+    for item in items:
         title = item.findtext("title") or ""
         link = item.findtext("link") or ""
         desc = item.findtext("description") or ""
 
-        keywords = ["lakers", "los angeles", "lebron", "anthony davis", "luka", "redick"]
-        text_to_check = (title + " " + desc).lower()
-
-        if any(k in text_to_check for k in keywords) and link and link not in seen_links:
+        if link and link not in seen_links:
             img_url = extract_og_image(link)
             new_articles.append({"title": title, "link": link, "desc": desc, "img_url": img_url})
             seen_links.append(link)
+            # 每次最多抓 3 則就夠做簡報，避免花太多時間抓網頁圖片
+            if len(new_articles) >= 3:
+                break
 
     return new_articles, seen_links
 
