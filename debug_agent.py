@@ -1,8 +1,8 @@
 import os
+import re
 import json
 import requests
 from google import genai
-from google.genai import types
 
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
@@ -20,7 +20,7 @@ def run_auto_debug():
 
     prompt = f"""
     你是一位資深的 Python 自動化與 CI/CD 除錯工程師。我們的雲端排程程式 `monitor.py` 在執行時發生錯誤中斷。
-    請分析以下錯誤日誌與原始碼，回傳一個標準 JSON 物件，包含兩個欄位：
+    請分析以下錯誤日誌與原始碼，回傳一個標準 JSON 物件（不要加任何其他說明文字），包含兩個欄位：
     1. "diagnosis": 用繁體中文簡潔說明「錯誤原因」與「修復方式」（150 字以內，準備發送到 Discord 通知開發者）。
     2. "fixed_code": 修復完成後、可直接覆蓋存檔的「完整 `monitor.py` 程式碼」（務必保留所有原有功能與正確縮排，不可省略任何段落）。
 
@@ -35,17 +35,13 @@ def run_auto_debug():
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.1
-        )
     )
 
-    result = json.loads(response.text)
+    clean_text = re.sub(r"^```json\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE)
+    result = json.loads(clean_text)
     diagnosis = result["diagnosis"]
     fixed_code = result["fixed_code"]
 
-    # 寫入修復後的程式碼與診斷摘要（供後續 GitHub Action 開立 PR）
     with open("monitor.py", "w", encoding="utf-8") as f:
         f.write(fixed_code)
 
@@ -56,7 +52,6 @@ def run_auto_debug():
             f"*請檢視 Files changed 確認無誤後，點擊下方 **Merge pull request** 即可套用修復。*"
         )
 
-    # 發送緊急通知到 Discord
     repo_url = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/pulls"
     discord_msg = (
         f"🛠️ **自動除錯警報！監控腳本執行失敗**\n\n"
