@@ -3,9 +3,9 @@ import json
 import requests
 from openai import OpenAI
 
-# 使用 GitHub Models 免費推論端點 + 內建 GITHUB_TOKEN (0 元免儲值呼叫 GPT-4o)
+# 使用 GitHub Models 官方新版推論端點 + 內建 GITHUB_TOKEN (0 元免儲值呼叫 GPT-4o)
 client = OpenAI(
-    base_url="https://models.inference.ai.azure.com",
+    base_url="https://models.github.ai/inference",
     api_key=os.environ["GITHUB_TOKEN"],
 )
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
@@ -34,9 +34,9 @@ def run_auto_debug():
     {source_code}
     """
 
-    print("GitHub Models (GPT-4o) Debug Agent 正在交叉分析錯誤並生成修復程式碼...", flush=True)
+    print("GitHub Models (openai/gpt-4o) Debug Agent 正在交叉分析錯誤並生成修復程式碼...", flush=True)
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="openai/gpt-4o",
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": "你是一位精準的 Python 除錯專家，只輸出合法的 JSON 格式。"},
