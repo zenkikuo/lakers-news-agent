@@ -199,11 +199,22 @@ def build_dynamic_video(img_url: str, srt_path: str, output_mp4: str):
     subprocess.run(cmd, check=True)
 
 def send_to_discord(text_report: str, video_path: str):
-    payload = {"content": f"🎬 **湖人隊動態影音速報已生成！**\n\n{text_report}"}
+    print("準備發送文字快報至 Discord...", flush=True)
+    r1 = requests.post(
+        DISCORD_WEBHOOK,
+        json={"content": f"🎬 **湖人隊動態影音速報已生成！**\n\n{text_report}"},
+        timeout=(5, 15)
+    )
+    r1.raise_for_status()
+
+    print("準備上傳 MP4 短影音至 Discord...", flush=True)
     with open(video_path, "rb") as video_file:
-        files = {"file": ("lakers_dynamic_news.mp4", video_file, "video/mp4")}
-        r = requests.post(DISCORD_WEBHOOK, data={"payload_json": json.dumps(payload)}, files=files, timeout=30)
-        r.raise_for_status()
+        r2 = requests.post(
+            DISCORD_WEBHOOK,
+            files={"file": ("lakers_dynamic_news.mp4", video_file, "video/mp4")},
+            timeout=(5, 20)
+        )
+        r2.raise_for_status()
     print("成功發送動態短影音至 Discord！", flush=True)
 
 if __name__ == "__main__":
