@@ -218,7 +218,7 @@ def send_to_discord(text_report: str, video_path: str):
     print("成功發送動態短影音至 Discord！", flush=True)
 
 if __name__ == "__main__":
-    articles, updated_seen = fetch_lakers_news()
+    articles, updated_seen = fetch_lakers_news_broken_test()
     if articles:
         articles_with_img = [a for a in articles if a.get("img_url")]
         cover_img = articles_with_img[0]["img_url"] if articles_with_img else None
