@@ -7,7 +7,12 @@ from google import genai
 # 1. 初始化 Gemini 與讀取環境變數
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 DISCORD_WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
-RSS_URL = "https://www.espn.com/espn/rss/nba/news"  # ESPN NBA 新聞源
+
+# 改用對雲端主機友善的 Yahoo Sports NBA 新聞源，並加上瀏覽器偽裝標頭
+RSS_URL = "https://sports.yahoo.com/nba/rss/"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
 HISTORY_FILE = "seen_news.json"
 
 def load_seen():
@@ -17,26 +22,31 @@ def load_seen():
     return []
 
 def save_seen(seen_list):
-    # 只保留最近 100 筆紀錄避免檔案無限膨脹
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(seen_list[-100:], f, ensure_ascii=False, indent=2)
 
 def fetch_lakers_news():
-    res = requests.get(RSS_URL, timeout=15)
+    res = requests.get(RSS_URL, headers=HEADERS, timeout=15)
+    res.raise_for_status()
+    
     root = ET.fromstring(res.content)
     seen_links = load_seen()
     new_articles = []
 
     for item in root.findall("./channel/item"):
-        title = item.find("title").text
-        link = item.find("link").text
-        desc = item.find("description").text if item.find("description") is not None else ""
+        title_el = item.find("title")
+        link_el = item.find("link")
+        desc_el = item.find("description")
+
+        title = title_el.text if title_el is not None and title_el.text else ""
+        link = link_el.text if link_el is not None and link_el.text else ""
+        desc = desc_el.text if desc_el is not None and desc_el.text else ""
 
         # 篩選與湖人隊相關且未通知過的新聞
         keywords = ["lakers", "los angeles", "lebron", "anthony davis", "luka", "redick"]
         text_to_check = (title + " " + desc).lower()
 
-        if any(k in text_to_check for k in keywords) and link not in seen_links:
+        if any(k in text_to_check for k in keywords) and link and link not in seen_links:
             new_articles.append({"title": title, "link": link, "desc": desc})
             seen_links.append(link)
 
@@ -70,7 +80,8 @@ def summarize_and_notify(articles):
 
     # 發送到 Discord
     payload = {"content": f"🚨 **湖人隊最新動態快報** 🚨\n\n{response.text}"}
-    requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
+    r = requests.post(DISCORD_WEBHOOK, json=payload, timeout=10)
+    r.raise_for_status()
     print(f"成功推送 {len(batch)} 則湖人隊新聞到 Discord！")
 
 if __name__ == "__main__":
@@ -78,3 +89,5 @@ if __name__ == "__main__":
     if articles:
         summarize_and_notify(articles)
         save_seen(updated_seen)
+    else:
+        print("巡檢完成：目前沒有未讀的湖人隊新聞。")
