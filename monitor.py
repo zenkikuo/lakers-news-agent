@@ -113,3 +113,4 @@ async def create_voiceover_and_srt(text: str, output_mp3: str, output_srt: str):
     raw_sentences = [s.strip() for s in re.split(r"[，。！？；、]+", text) if s.strip()]
     sentences = []
     for s in raw_sentences:
+        sentences.extend([s[i:i+16] for i in range(0, len(s), 16)])
