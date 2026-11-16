@@ -26,7 +26,13 @@ FALLBACK_MODELS = [
     "gemini-2.0-flash",
 ]
 
-LAKERS_RSS = "https://news.google.com/rss/search?q=Los+Angeles+Lakers+(NBA+OR+LeBron+OR+Davis+OR+Doncic+OR+trade+OR+injury)&hl=en-US&gl=US&ceid=US:en"
+LAKERS_RSS = "https://news.google.com/rss/search?q=Los+Angeles+Lakers+(NBA+OR+LeBron+OR+Davis+OR+Doncic+OR+Reaves+OR+trade+OR+injury)&hl=en-US&gl=US&ceid=US:en"
+
+# 過濾盜版直播 SEO 垃圾廣告與亂碼字元
+SPAM_KEYWORDS = [
+    "livestream", "live stream", "free stream", "watch online", "reddit stream",
+    "crackstreams", "buffstreams", "universitat", "1st quarter highlights", "2nd quarter highlights"
+]
 
 def load_seen() -> list:
     if os.path.exists(SEEN_FILE):
@@ -38,6 +44,15 @@ def save_seen(seen_list: list):
     with open(SEEN_FILE, "w", encoding="utf-8") as f:
         json.dump(seen_list[-300:], f, ensure_ascii=False, indent=2)
 
+def is_spam_or_garbled(title: str) -> bool:
+    title_lower = title.lower()
+    if any(spam in title_lower for spam in SPAM_KEYWORDS):
+        return True
+    # 偵測數學粗體/等寬 Unicode 亂碼字元（如 𝐋𝐈𝐕𝐄 𝙵 𝚛 𝚎 𝚎）
+    if any(ord(ch) > 0x1D400 for ch in title):
+        return True
+    return False
+
 def fetch_lakers_news(seen_ids: set) -> list:
     candidates = []
     headers = {"User-Agent": "Mozilla/5.0 (compatible; LakersMonitor/1.0)"}
@@ -45,7 +60,7 @@ def fetch_lakers_news(seen_ids: set) -> list:
     res.raise_for_status()
 
     root = ET.fromstring(res.content)
-    for item in root.findall(".//item")[:15]:
+    for item in root.findall(".//item")[:20]:
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         pub_date = (item.findtext("pubDate") or "").strip()
@@ -53,7 +68,7 @@ def fetch_lakers_news(seen_ids: set) -> list:
             continue
 
         uid = hashlib.md5(title.lower().encode("utf-8")).hexdigest()[:12]
-        if uid in seen_ids:
+        if uid in seen_ids or is_spam_or_garbled(title):
             continue
 
         candidates.append({
@@ -62,18 +77,20 @@ def fetch_lakers_news(seen_ids: set) -> list:
             "link": link,
             "pub_date": pub_date
         })
-    return candidates[:8]
+    return candidates[:10]
 
 def summarize_lakers_news(candidates: list) -> dict:
-    news_text = "\n".join([f"- {c['title']} ({c['pub_date']})" for c in candidates])
+    news_text = "\n".join([f"{idx}. {c['title']} ({c['pub_date']})" for idx, c in enumerate(candidates)])
 
     prompt = f"""
-    你是一位熱血專業的 NBA 洛杉磯湖人隊隨隊記者。請將以下最新湖人隊英文新聞翻譯並整理成繁體中文戰報。
+    你是一位熱血專業的 NBA 洛杉磯湖人隊隨隊記者。請評估以下最新湖人隊英文新聞，篩選出具備【3星以上重要價值】的動態（例如：最終賽果戰報、主力傷兵更新、交易補強傳聞、球星里程碑或教練團重大決策；瑣碎的單節精華或農場文請給 1~2 星並略過）。
     請嚴格輸出合法 JSON 格式（不要包含 markdown 標記或額外文字）：
     {{
-      "has_update": true,
+      "has_major_update": true 或 false,
+      "importance_score": 1到5的整數,
+      "relevant_indices": [真正與此重大快報相關的新聞編號整數列表，例如 [0, 2]],
       "headline": "18字以內的繁體中文震撼主標題（適合當短影音封面標題）",
-      "discord_brief": "條列式繁體中文重點摘要（200字以內）",
+      "discord_brief": "條列式繁體中文重點摘要（嚴格根據標題事實撰寫，200字以內）",
       "voice_script": "45秒內可唸完的繁體中文湖人快報口播稿（語氣生動有活力，約110~150字，不可為空字串）"
     }}
 
@@ -107,7 +124,7 @@ async def generate_tts(text: str, output_mp3: str):
 def create_lakers_video(summary: dict, audio_path: str, output_mp4: str):
     img_path = "lakers_card.png"
     W, H = 1080, 1920
-    img = Image.new("RGB", (W, H), color=(35, 18, 66))  # 湖人紫背景
+    img = Image.new("RGB", (W, H), color=(35, 18, 66))
     draw = ImageDraw.Draw(img)
 
     font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
@@ -120,7 +137,6 @@ def create_lakers_video(summary: dict, audio_path: str, output_mp4: str):
 
     now_str = datetime.now(TAIPEI_TZ).strftime("%Y/%m/%d %H:%M 台北時間")
 
-    # 湖人金頂部橫幅
     draw.rectangle([70, 120, 1010, 215], fill=(253, 185, 39))
     draw.text((100, 142), "🏀 LOS ANGELES LAKERS｜紫金即時快報", fill=(35, 18, 66), font=font_tag)
     draw.text((70, 245), now_str, fill=(216, 180, 254), font=font_body)
@@ -155,7 +171,7 @@ def main():
 
     candidates = fetch_lakers_news(seen_ids)
     if not candidates:
-        print("☕ 目前無未讀的湖人隊新消息。", flush=True)
+        print("☕ 目前無未讀的湖人隊有效新消息。", flush=True)
         return
 
     summary = summarize_lakers_news(candidates)
@@ -164,9 +180,16 @@ def main():
         seen_list.append(c["uid"])
     save_seen(seen_list)
 
-    sources_links = "\n".join([f"• [{c['title']}]({c['link']})" for c in candidates[:4]])
+    if not summary.get("has_major_update") or summary.get("importance_score", 0) < 3:
+        print(f"📉 最高新聞重要度為 {summary.get('importance_score', 0)} 星（未達 3 星門檻），靜默略過推播。", flush=True)
+        return
+
+    indices = summary.get("relevant_indices", [0, 1])
+    selected = [candidates[i] for i in indices if isinstance(i, int) and 0 <= i < len(candidates)] or candidates[:3]
+    sources_links = "\n".join([f"• [{c['title']}](<{c['link']}>)" for c in selected[:4]])
+
     msg = (
-        f"🏀 **【紫金即時快報】{summary['headline']}**\n\n"
+        f"🏀 **【{summary['importance_score']}★ 紫金即時快報】{summary['headline']}**\n\n"
         f"{summary['discord_brief']}\n\n"
         f"**🔗 原始新聞來源：**\n{sources_links}"
     )
