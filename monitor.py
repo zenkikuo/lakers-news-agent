@@ -48,7 +48,7 @@ def is_spam_or_garbled(title: str) -> bool:
     title_lower = title.lower()
     if any(spam in title_lower for spam in SPAM_KEYWORDS):
         return True
-    # 偵測數學粗體/等寬 Unicode 亂碼字元（如 𝐋𝐈𝐕𝐄 𝙵 𝚛 𝚎 𝚎）
+    # 偵測數學粗體/等寬 Unicode 亂碼字元（如 𝐋𝐈𝐕𝐄 𝓓 𝓡 𝓮 𝓮）
     if any(ord(ch) > 0x1D400 for ch in title):
         return True
     return False
@@ -56,9 +56,23 @@ def is_spam_or_garbled(title: str) -> bool:
 def fetch_lakers_news(seen_ids: set) -> list:
     candidates = []
     headers = {"User-Agent": "Mozilla/5.0 (compatible; LakersMonitor/1.0)"}
-    res = requests.get(LAKERS_RSS, headers=headers, timeout=15)
-    res.raise_for_status()
+    max_retries = 3
+    retry_delay_seconds = 5
 
+    for attempt in range(max_retries):
+        try:
+            res = requests.get(LAKERS_RSS, headers=headers, timeout=15)
+            res.raise_for_status()  # Check for HTTP errors like 503
+            break  # If successful, exit the retry loop
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ 請求 Google News RSS 失敗 (嘗試 {attempt + 1}/{max_retries}): {e}", flush=True)
+            if attempt < max_retries - 1:
+                print(f"🔄 等待 {retry_delay_seconds} 秒後重試...", flush=True)
+                time.sleep(retry_delay_seconds)
+            else:
+                raise  # Re-raise if all retries fail
+
+    # If the loop completes, 'res' should contain a successful response
     root = ET.fromstring(res.content)
     for item in root.findall(".//item")[:20]:
         title = (item.findtext("title") or "").strip()
