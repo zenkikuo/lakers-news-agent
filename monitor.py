@@ -21,9 +21,9 @@ SEEN_FILE = "seen_news.json"
 TAIPEI_TZ = timezone(timedelta(hours=8))
 
 FALLBACK_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
+    "gemini-3.8-flash",      # 更新為推薦的最新 flash 模型，替換 gemini-2.0-flash
+    "gemini-3.5-flash-lite", # 更新為推薦的最新 flash-lite 模型，替換 gemini-2.5-flash-lite
+    "gemini-1.5-flash",      # 替換因高需求不可用的 gemini-2.5-flash，使用一個穩定且廣泛可用的 flash 模型
 ]
 
 LAKERS_RSS = "https://news.google.com/rss/search?q=Los+Angeles+Lakers+(NBA+OR+LeBron+OR+Davis+OR+Doncic+OR+Reaves+OR+trade+OR+injury)&hl=en-US&gl=US&ceid=US:en"
