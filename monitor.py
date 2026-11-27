@@ -59,6 +59,8 @@ def fetch_lakers_news(seen_ids: set) -> list:
     max_retries = 3
     retry_delay_seconds = 5
 
+    # Initialize res to None outside the loop, in case all retries fail
+    res = None 
     for attempt in range(max_retries):
         try:
             res = requests.get(LAKERS_RSS, headers=headers, timeout=15)
@@ -70,9 +72,12 @@ def fetch_lakers_news(seen_ids: set) -> list:
                 print(f"🔄 等待 {retry_delay_seconds} 秒後重試...", flush=True)
                 time.sleep(retry_delay_seconds)
             else:
-                raise  # Re-raise if all retries fail
+                # If all retries fail, log the error and return an empty list instead of re-raising
+                print("❌ 經過多次嘗試，無法從 Google News 獲取 RSS，本次跳過新聞抓取。", flush=True)
+                return []
 
-    # If the loop completes, 'res' should contain a successful response
+    # This part is only reached if 'break' was executed, meaning 'res' contains a valid response.
+    # If the loop completed all attempts and returned [], this part is skipped.
     root = ET.fromstring(res.content)
     for item in root.findall(".//item")[:20]:
         title = (item.findtext("title") or "").strip()
